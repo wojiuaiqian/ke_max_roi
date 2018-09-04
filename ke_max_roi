@@ -1,0 +1,84 @@
+#coding=utf-8
+import re
+import requests
+from lxml import etree
+import time
+import multiprocessing as mp
+import pandas as pd
+
+def citys(url):
+    p = pd.DataFrame(columns=["name", "price","id"])
+    px = pd.DataFrame(columns=["rental","id"])
+    r1 = requests.get(url, headers=headers)
+    html1 = etree.HTML(r1.content)
+    citys = html1.xpath(
+        '//div[@class="city_selection_section"]//div[@class="city_province"]/ul[1]/li[@class="CLICKDATA"]//a')
+    vs = [(i.xpath("text()")[0], "https:" + i.get("href")) for i in citys]
+
+    for x in vs:
+        if x[1][:10] != 'https://i.':
+            r2 = requests.get(x[1] + "/xiaoqu")
+            html2 = etree.HTML(r2.content)
+            qu = html2.xpath('//div/a[@class=" CLICKDATA"]')
+            if qu!=[]:
+                qu = [(x[1] + q.get("href")) for q in qu]
+
+                for y in qu:
+                    rxx=requests.get(y)
+                    htmlx=etree.HTML(rxx.content)
+                    total=int(htmlx.xpath('/html/body/div[4]/div[1]/div[2]/h2/span/text()')[0])
+                    y=[y+"pg"+str(p) for p in range(1,(total//30)+2,1)]
+                    for yx in y:
+                        r3 = requests.get(yx)
+
+                        html3 = etree.HTML(r3.content)
+                        gardens = html3.xpath('//div[@class="title"]/a')
+                        garden_list = [garden.get("href") for garden in gardens]
+
+                        garden_zu_list = [xqxq.replace('ke.com', 'zu.ke.com').replace("xiaoqu/", "zufang/rt200600000001c") for
+                                      xqxq in garden_list]
+                        pd1 = pd.DataFrame(columns=["name", "price"])
+                        for xy in garden_list:
+                            try:
+                                id1 = re.findall(r"\d{10,20}", xy)[0]
+                                rx = requests.get(xy, headers=headers)
+                                htmlx = etree.HTML(rx.content)
+                                name = htmlx.xpath("//h1/text()")[0]
+                                price = int(htmlx.xpath('/html/body/div[6]/div[2]/div[1]/div/span[1]/text()')[0])
+
+                                s=pd.Series({"name":name,"price":price,"id":id1})
+                                pd1=pd1.append(s,ignore_index=True)
+                                p=p.append(pd1)
+                                p=p.drop_duplicates(subset=["name","price","id"], keep='first')
+                                p.to_excel("data.xls")
+                                print(p)
+                            except:
+                                continue
+
+                        for zu_list in garden_zu_list:
+                            id2=re.findall("c\d\d.*$", zu_list)[0][1:-1]
+                            r4 = requests.get(zu_list)
+                            html4 = etree.HTML(r4.content)
+                            sum=0
+                            divs = html4.xpath('//div[@class="content__list--item--main"]')
+                            if divs!=[]:
+                                pd2 = pd.DataFrame(columns=["rental", "id"])
+                                for div in divs:
+                                    area = div.xpath('p[@class="content__list--item--des"]/text()[4]')[0].strip()[:-1]
+                                    rental = div.xpath('span[@class="content__list--item-price"]/em/text()')[0].strip()
+                                    average_rental = int(rental) / float(area)
+
+                                    sum=sum+average_rental
+                                final_average_rental=sum/len(divs)
+
+                                s = pd.Series({"rental": final_average_rental,"id":id2})
+                                pd2=pd2.append(s,ignore_index=True)
+                                px = px.append(pd2)
+                                px=px.drop_duplicates(subset=["rental", "id"], keep='first')
+                                px.to_excel("data2.xls")
+                                print(px)
+
+if __name__=="__main__":
+    headers={'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36',"keep_alive" : "False"}
+    url="https://www.ke.com/city/"
+    citys(url)
